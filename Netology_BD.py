@@ -22,39 +22,88 @@ def create_db(conn):
     conn.commit()
     return f'Tables "Customer" and "Phones" has cteate'
 
-#Функция, позволяющая добавить нового клиента
-def add_client(conn, first_name: str, last_name: str, email: str, phone = None) -> str:
+#функция, проверяющая в момент внесениея нового Клиента, присутствует ли Клиент в БД
+def check_client_in_database(conn, email: str, phone = None):
     cur = conn.cursor()
     if phone == None:
-        SQL = "INSERT INTO customer(name, surname, email) VALUES (%s, %s, %s);"
-        data = (first_name, last_name, email)
+        SQL = "SELECT (name, surname, email) FROM customer WHERE email = %s;"
+        data = (email,)
         cur.execute(SQL, data)
+        query = cur.fetchall()
         cur.close()
         conn.commit()
-        return f'New customer {last_name} {first_name} cteated'
-
+        if query == []:
+            print(f'Client with email {email} not found, you may to save new client in the database')
+            return True
+        else:
+            print(f'Client {query} witn {email} is in the database')
+            return False
     else:
-        SQL_1 = "INSERT INTO customer(name, surname, email) VALUES (%s, %s, %s);"
-        data_1 = (first_name, last_name, email)
-        cur.execute("""INSERT INTO customer(name, surname, email) VALUES (%s, %s, %s) RETURNING customer_id;""",
-                    (first_name, last_name, email))
-        id = cur.fetchone()
-        SQL_2 = "INSERT INTO phones(num_phone, customer_id) VALUES(%s, %s)"
-        data_2 = (phone, id[0])
-        cur.execute(SQL_2, data_2)
+        SQL = "SELECT (num_phone, customer_id) FROM phones WHERE num_phone = %s;"
+        data = (phone,)
+        cur.execute(SQL, data)
+        query_num = cur.fetchall()
         cur.close()
         conn.commit()
-        return f'New customer {last_name} {first_name} cteated'
+        if query_num == []:
+            cur_2 = conn.cursor()
+            SQL_2 = "SELECT (name, surname, email) FROM customer WHERE email = %s;"
+            data_2 = (email,)
+            cur_2.execute(SQL_2, data_2)
+            query_email = cur_2.fetchall()
+            cur_2.close()
+            conn.commit()
+            if query_email == []:
+                return True
+            else:
+                print(f'Client {query_email} witn {email} is in the database')
+                return False
+        else:
+            print(f'Client {query_num} witn {phone} is in the database')
+            return False
+
+#Функция, позволяющая добавить нового клиента
+def add_client(conn, first_name: str, last_name: str, email: str, phone = None) -> str:
+    if check_client_in_database(conn, email, phone):
+        cur = conn.cursor()
+        if phone == None:
+            SQL = "INSERT INTO customer(name, surname, email) VALUES (%s, %s, %s);"
+            data = (first_name, last_name, email)
+            cur.execute(SQL, data)
+            cur.close()
+            conn.commit()
+            return f'New customer {last_name} {first_name} cteated'
+        else:
+            SQL_1 = "INSERT INTO customer(name, surname, email) VALUES (%s, %s, %s);"
+            data_1 = (first_name, last_name, email)
+            cur.execute("""INSERT INTO customer(name, surname, email) VALUES (%s, %s, %s) RETURNING customer_id;""",
+                    (first_name, last_name, email))
+            # RETURNING возвращает значение из запроса
+            id = cur.fetchone()
+            SQL_2 = "INSERT INTO phones(num_phone, customer_id) VALUES(%s, %s)"
+            data_2 = (phone, id[0])
+            cur.execute(SQL_2, data_2)
+            cur.close()
+            conn.commit()
+            return f'New customer {last_name} {first_name} cteated'
+    else:
+         print('client duplication')
+
 
 #Функция, позволяющая добавить телефон для существующего клиента
 def add_phone(conn, client_id: int, phone: str) -> str:
     cur = conn.cursor()
-    SQL = "INSERT INTO phones(num_phone, customer_id) VALUES(%s, %s)"
-    data = (phone, client_id)
-    cur.execute(SQL, data)
-    cur.close()
-    conn.commit()
-    return f'Number phone {phone} added'
+    try:
+        SQL = "INSERT INTO phones(num_phone, customer_id) VALUES(%s, %s)"
+        data = (phone, client_id)
+        cur.execute(SQL, data)
+        cur.close()
+        conn.commit()
+        return f'Number phone {phone} added'
+    except psycopg2.errors.UniqueViolation:
+        print(f'{phone} is in the database')
+        cur.close()
+        conn.commit()
 
 #Функция, позволяющая изменить данные о клиенте
 def change_client(conn, client_id: int, first_name=None, last_name=None, email=None, phones=None) -> str:
@@ -93,7 +142,7 @@ def change_client(conn, client_id: int, first_name=None, last_name=None, email=N
 #Функция, позволяющая удалить телефон для существующего клиента
 def delete_phone(conn, client_id: int, phone: str) -> str:
     cur = conn.cursor()
-    cur.execute("""DELETE FROM phones WHERE num_phone=%s AND customer_id=%s""",(phone, client_id))
+    cur.execute("""DELETE FROM phones WHERE num_phone = %s AND customer_id = %s""",(phone, client_id))
     cur.close()
     conn.commit()
     return f'Number phone {phone} has delete'
@@ -140,15 +189,19 @@ def find_client(conn, first_name=None, last_name=None, email=None, phone=None) -
 
 with psycopg2.connect(database="Work_with_PSQL_from_Python", user="postgres", password="Zrhfcfdxbr") as conn:
     print(create_db(conn))
-    print(add_client(conn, "Мария", "Вдовина", "maria@mail.ru", 89656186255))
+    print(add_client(conn, "Мария", "Вдовина", "maria@mail.ru", '89656186255'))
     print(add_client(conn, "Дмитрий", "Вдовин", "9274547212@mail.ru"))
-    print(add_phone(conn, 2, '9274570416'))
-    print(delete_phone(conn, 2, "9274570416"))
+    print(add_client(conn, "Иванов", "Иван", "maria@mail.ru"))
+    add_phone(conn, 2, '89274570416')
+    add_phone(conn, 1, '89274570416')
+    print(delete_phone(conn, 2, "89274570416"))
     find_client(conn, 'Дмитрий', 'Вдовин')
     find_client(conn, email='9274547212@mail.ru')
-    find_client(conn, phone='9274570416')
+    find_client(conn, phone='89274570416')
     change_client(conn, 1, first_name="Дмитрий")
     change_client(conn, 1, email="Дмитрий")
     print(delete_client(conn, 1))
+
+
 
 conn.close()
